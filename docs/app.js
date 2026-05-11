@@ -52,6 +52,7 @@ const els = {
   documentTitle: document.querySelector("#document-title"),
   documentUrl: document.querySelector("#document-url"),
   documentNote: document.querySelector("#document-note"),
+  documentStatus: document.querySelector("#document-status"),
   emptyTemplate: document.querySelector("#empty-template")
 };
 
@@ -142,20 +143,33 @@ els.documentForm.addEventListener("submit", async (event) => {
   const note = els.documentNote.value.trim();
   if (!title || !url) return;
 
-  await addDoc(collection(db, "rooms", state.roomId, "documents"), {
-    type: "document",
-    title,
-    url,
-    note: note || "No note provided.",
-    senderName: displayName(),
-    senderRole: "Chair",
-    senderId: state.user.uid,
-    createdAt: serverTimestamp()
-  });
+  const button = els.documentForm.querySelector("button");
+  button.disabled = true;
+  setDocumentStatus("Posting document link...");
 
-  els.documentTitle.value = "";
-  els.documentUrl.value = "";
-  els.documentNote.value = "";
+  try {
+    await addDoc(collection(db, "rooms", state.roomId, "documents"), {
+      type: "document",
+      title,
+      url,
+      note: note || "No note provided.",
+      senderName: displayName(),
+      senderRole: "Chair",
+      senderId: state.user.uid,
+      createdAt: serverTimestamp()
+    });
+
+    els.documentTitle.value = "";
+    els.documentUrl.value = "";
+    els.documentNote.value = "";
+    setDocumentStatus("Document link posted.");
+  } catch (error) {
+    const message = readableFirestoreError(error);
+    setDocumentStatus(message, "warn");
+    setConnection(message, "warn");
+  } finally {
+    button.disabled = false;
+  }
 });
 
 function openWorkspace() {
@@ -212,12 +226,12 @@ function subscribeToRoom() {
   state.unsubscribeMessages = onSnapshot(messageQuery, async (snapshot) => {
     const items = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     renderMessages(items);
-  }, (error) => setConnection(error.message, "warn"));
+  }, (error) => setConnection(readableFirestoreError(error), "warn"));
 
   state.unsubscribeDocuments = onSnapshot(documentQuery, async (snapshot) => {
     const items = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     renderDocuments(items);
-  }, (error) => setConnection(error.message, "warn"));
+  }, (error) => setConnection(readableFirestoreError(error), "warn"));
 }
 
 async function sendMessage(toInput, bodyInput) {
@@ -334,6 +348,11 @@ function setConnection(text, tone = "") {
   els.connection.className = `connection ${tone}`.trim();
 }
 
+function setDocumentStatus(text, tone = "") {
+  els.documentStatus.textContent = text;
+  els.documentStatus.className = `form-status ${tone}`.trim();
+}
+
 function readableAuthError(error) {
   const code = error?.code || "";
   if (code.includes("invalid-credential") || code.includes("wrong-password") || code.includes("user-not-found")) {
@@ -343,6 +362,17 @@ function readableAuthError(error) {
     return "Enable Email/Password in Firebase Auth";
   }
   return error?.message || "Could not sign in";
+}
+
+function readableFirestoreError(error) {
+  const code = error?.code || "";
+  if (code.includes("permission-denied")) {
+    return "Firestore rules blocked this. Publish the latest rules.";
+  }
+  if (code.includes("failed-precondition")) {
+    return "Firestore needs a database/index setup step.";
+  }
+  return error?.message || "Firestore request failed";
 }
 
 function escapeHtml(value) {
