@@ -79,7 +79,7 @@ onAuthStateChanged(auth, (user) => {
   state.authReady = true;
   state.user = user;
   if (user) {
-    const account = state.accounts.find((item) => item.authEmail === user.email);
+    const account = state.accounts.find((item) => normalizeEmail(item.authEmail) === normalizeEmail(user.email));
     if (account) {
       state.account = account;
       state.mode = account.role === "chair" ? "admin" : "delegate";
@@ -508,7 +508,11 @@ function restoreLoginState() {
 
 function findAccount(value) {
   const normalized = normalizeAccount(value);
-  return state.accounts.find((account) => normalizeAccount(account.account) === normalized);
+  const normalizedEmail = normalizeEmail(value);
+  return state.accounts.find((account) => (
+    normalizeAccount(account.account) === normalized
+    || normalizeEmail(account.authEmail) === normalizedEmail
+  ));
 }
 
 function displayName() {
@@ -551,6 +555,10 @@ function renderPeople(items) {
 }
 
 function normalizeAccount(value) {
+  return String(value).trim().toLowerCase();
+}
+
+function normalizeEmail(value) {
   return String(value).trim().toLowerCase();
 }
 
