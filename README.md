@@ -30,6 +30,18 @@ Create users manually in Firebase Console:
 
 Admin routing is controlled by the `adminEmails` list in `docs/firebase-config.js`. Any signed-in email in that list opens the admin panel; all other signed-in users open the delegate workspace.
 
+The recipient picker is controlled by the `participants` list in `docs/firebase-config.js`. Add every delegate and chair account there after creating the users in Firebase Authentication.
+
+Example:
+
+```js
+export const participants = [
+  { email: "christopherw.mun@gmail.com", label: "Chair", role: "chair" },
+  { email: "france@example.com", label: "France", role: "delegate" },
+  { email: "japan@example.com", label: "Japan", role: "delegate" }
+];
+```
+
 ## Local test
 
 ```sh
@@ -56,7 +68,10 @@ https://your-username.github.io/your-repo-name/
 
 - Create one Firebase email/password user for each participant.
 - Everyone signs into the same main event room.
-- Everyone can read the same room messages and document links.
+- Delegates can send messages to one to three recipients.
+- Delegate messages go to chair screening first.
+- Chair/admin users can approve messages for delivery or return them with a note.
+- Everyone can read document links.
 - Put chair/admin emails in `adminEmails` so those users open the admin panel.
 
 ## Limits to understand

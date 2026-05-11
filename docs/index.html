@@ -70,9 +70,13 @@
             </div>
             <div id="delegate-messages-feed" class="feed" aria-live="polite"></div>
             <form id="delegate-message-form" class="composer">
-              <input id="delegate-message-to" maxlength="60" placeholder="To: all, chair, or delegation">
+              <label class="recipient-picker">
+                Recipients
+                <select id="delegate-message-to" multiple size="4" required></select>
+              </label>
               <textarea id="delegate-message-body" rows="3" maxlength="1600" placeholder="Write a message..." required></textarea>
               <button type="submit">Send</button>
+              <p id="delegate-message-status" class="form-status" role="status"></p>
             </form>
           </section>
         </section>
@@ -94,14 +98,21 @@
             <div class="section-head">
               <div>
                 <h2 id="admin-messages-title">Messaging panel</h2>
-                <p>Placeholder admin inbox with the same live room messaging underneath.</p>
+                <p>Screen delegate messages before delivery, or send chair messages directly.</p>
               </div>
             </div>
+            <h3>Screening queue</h3>
+            <div id="screening-feed" class="feed compact-feed" aria-live="polite"></div>
+            <h3>Delivered and returned messages</h3>
             <div id="admin-messages-feed" class="feed" aria-live="polite"></div>
             <form id="admin-message-form" class="composer">
-              <input id="admin-message-to" maxlength="60" placeholder="To: all, chair, or delegation">
+              <label class="recipient-picker">
+                Recipients
+                <select id="admin-message-to" multiple size="4" required></select>
+              </label>
               <textarea id="admin-message-body" rows="3" maxlength="1600" placeholder="Write a message..." required></textarea>
               <button type="submit">Send</button>
+              <p id="admin-message-status" class="form-status" role="status"></p>
             </form>
           </section>
 

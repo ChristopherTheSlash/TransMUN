@@ -49,6 +49,10 @@ button:disabled {
   opacity: 0.55;
 }
 
+select {
+  min-height: 120px;
+}
+
 a {
   color: var(--accent-strong);
   overflow-wrap: anywhere;
@@ -205,6 +209,7 @@ label {
 }
 
 input,
+select,
 textarea {
   width: 100%;
   border: 1px solid var(--line);
@@ -241,6 +246,10 @@ textarea:focus {
 
 .form-status.warn {
   color: var(--warn);
+}
+
+.recipient-picker {
+  min-width: 180px;
 }
 
 .workspace {
@@ -301,6 +310,12 @@ textarea:focus {
   background: #f9fbfc;
 }
 
+.compact-feed {
+  min-height: 220px;
+  max-height: 34vh;
+  margin-bottom: 18px;
+}
+
 .message,
 .document {
   padding: 13px;
@@ -332,8 +347,25 @@ textarea:focus {
   line-height: 1.5;
 }
 
+.chair-note {
+  color: var(--warn);
+  font-weight: 700;
+}
+
+.moderation-controls {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .composer {
-  grid-template-columns: 180px 1fr auto;
+  grid-template-columns: minmax(180px, 240px) 1fr auto;
   align-items: end;
   margin-top: 12px;
 }

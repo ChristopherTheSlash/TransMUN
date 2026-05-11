@@ -5,12 +5,17 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function chair() {
+      return signedIn() && request.auth.token.email in ["christopherw.mun@gmail.com"];
+    }
+
     function validRoomItem() {
       return request.resource.data.senderId == request.auth.uid
         && request.resource.data.senderName is string
         && request.resource.data.senderName.size() <= 40
         && request.resource.data.senderRole is string
-        && request.resource.data.senderRole.size() <= 50;
+        && request.resource.data.senderRole.size() <= 50
+        && request.resource.data.senderEmail == request.auth.token.email;
     }
 
     match /rooms/{roomId}/messages/{messageId} {
@@ -18,11 +23,27 @@ service cloud.firestore {
       allow create: if signedIn()
         && validRoomItem()
         && request.resource.data.type == "message"
+        && (
+          request.resource.data.status == "pending"
+          || (chair() && request.resource.data.status == "approved")
+        )
         && request.resource.data.to is string
         && request.resource.data.to.size() <= 60
+        && request.resource.data.recipientEmails is list
+        && request.resource.data.recipientEmails.size() >= 1
+        && request.resource.data.recipientEmails.size() <= 3
+        && request.resource.data.recipientLabels is list
+        && request.resource.data.recipientLabels.size() >= 1
+        && request.resource.data.recipientLabels.size() <= 3
         && request.resource.data.body is string
-        && request.resource.data.body.size() <= 1600;
-      allow update, delete: if false;
+        && request.resource.data.body.size() <= 1600
+        && request.resource.data.chairNote is string
+        && request.resource.data.chairNote.size() <= 600;
+      allow update: if chair()
+        && request.resource.data.status in ["approved", "returned"]
+        && request.resource.data.chairNote is string
+        && request.resource.data.chairNote.size() <= 600;
+      allow delete: if false;
     }
 
     match /rooms/{roomId}/documents/{documentId} {

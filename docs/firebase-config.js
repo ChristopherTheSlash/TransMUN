@@ -11,3 +11,11 @@ export const firebaseConfig = {
 export const adminEmails = [
   "christopherw.mun@gmail.com"
 ];
+
+export const participants = [
+  {
+    email: "christopherw.mun@gmail.com",
+    label: "Chair",
+    role: "chair"
+  }
+];

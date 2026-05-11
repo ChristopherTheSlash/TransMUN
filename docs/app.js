@@ -8,14 +8,16 @@ import {
 import {
   addDoc,
   collection,
+  doc,
   getFirestore,
   limit,
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp
+  serverTimestamp,
+  updateDoc
 } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
-import { adminEmails, firebaseConfig } from "./firebase-config.js";
+import { adminEmails, firebaseConfig, participants } from "./firebase-config.js";
 
 const state = {
   authReady: false,
@@ -40,12 +42,15 @@ const els = {
   adminRoom: document.querySelector("#admin-room"),
   delegateMessages: document.querySelector("#delegate-messages-feed"),
   adminMessages: document.querySelector("#admin-messages-feed"),
+  screeningFeed: document.querySelector("#screening-feed"),
   delegateMessageForm: document.querySelector("#delegate-message-form"),
   delegateMessageTo: document.querySelector("#delegate-message-to"),
   delegateMessageBody: document.querySelector("#delegate-message-body"),
+  delegateMessageStatus: document.querySelector("#delegate-message-status"),
   adminMessageForm: document.querySelector("#admin-message-form"),
   adminMessageTo: document.querySelector("#admin-message-to"),
   adminMessageBody: document.querySelector("#admin-message-body"),
+  adminMessageStatus: document.querySelector("#admin-message-status"),
   delegateDocuments: document.querySelector("#delegate-documents"),
   adminDocuments: document.querySelector("#admin-documents-list"),
   documentForm: document.querySelector("#document-link-form"),
@@ -90,8 +95,10 @@ if (hasConfig) {
 restoreLoginState();
 renderEmpty(els.delegateMessages);
 renderEmpty(els.adminMessages);
+renderEmpty(els.screeningFeed);
 renderEmpty(els.delegateDocuments);
 renderEmpty(els.adminDocuments);
+populateRecipientPickers();
 
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => switchTab(tab));
@@ -126,12 +133,12 @@ els.signOut.addEventListener("click", async () => {
 
 els.delegateMessageForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  await sendMessage(els.delegateMessageTo, els.delegateMessageBody);
+  await sendMessage(els.delegateMessageTo, els.delegateMessageBody, els.delegateMessageStatus);
 });
 
 els.adminMessageForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  await sendMessage(els.adminMessageTo, els.adminMessageBody);
+  await sendMessage(els.adminMessageTo, els.adminMessageBody, els.adminMessageStatus);
 });
 
 els.documentForm.addEventListener("submit", async (event) => {
@@ -209,6 +216,7 @@ function subscribeToRoom() {
   closeSubscriptions();
   renderEmpty(els.delegateMessages);
   renderEmpty(els.adminMessages);
+  renderEmpty(els.screeningFeed);
   renderEmpty(els.delegateDocuments);
   renderEmpty(els.adminDocuments);
 
@@ -234,32 +242,58 @@ function subscribeToRoom() {
   }, (error) => setConnection(readableFirestoreError(error), "warn"));
 }
 
-async function sendMessage(toInput, bodyInput) {
+async function sendMessage(toInput, bodyInput, statusTarget) {
   if (!canUseRoom()) return;
 
   const plainText = bodyInput.value.trim();
-  const to = toInput.value.trim() || "all";
-  if (!plainText) return;
+  const recipients = selectedRecipients(toInput);
+  if (!plainText || !recipients.length) return;
 
-  await addDoc(collection(db, "rooms", state.roomId, "messages"), {
-    type: "message",
-    to,
-    body: plainText,
-    senderName: displayName(),
-    senderRole: state.mode === "admin" ? "Chair" : "Delegate",
-    senderId: state.user.uid,
-    createdAt: serverTimestamp()
-  });
+  if (recipients.length > 3) {
+    setFormStatus(statusTarget, "Choose at most three recipients.", "warn");
+    return;
+  }
 
-  bodyInput.value = "";
+  const isChairMessage = state.mode === "admin";
+  const status = isChairMessage ? "approved" : "pending";
+
+  try {
+    await addDoc(collection(db, "rooms", state.roomId, "messages"), {
+      type: "message",
+      status,
+      to: recipients.map((recipient) => recipient.label).join(", "),
+      recipientEmails: recipients.map((recipient) => recipient.email),
+      recipientLabels: recipients.map((recipient) => recipient.label),
+      body: plainText,
+      chairNote: "",
+      senderEmail: state.user.email || "",
+      senderName: displayName(),
+      senderRole: isChairMessage ? "Chair" : "Delegate",
+      senderId: state.user.uid,
+      createdAt: serverTimestamp()
+    });
+
+    bodyInput.value = "";
+    clearSelection(toInput);
+    setFormStatus(statusTarget, isChairMessage ? "Message delivered." : "Message sent to chair screening.");
+  } catch (error) {
+    const message = readableFirestoreError(error);
+    setFormStatus(statusTarget, message, "warn");
+    setConnection(message, "warn");
+  }
 }
 
 function renderMessages(items) {
-  renderMessageFeed(els.delegateMessages, items);
-  renderMessageFeed(els.adminMessages, items);
+  const pending = items.filter((item) => item.status === "pending");
+  const adminHistory = items.filter((item) => item.status !== "pending");
+  const delegateItems = items.filter((item) => isVisibleToCurrentDelegate(item));
+
+  renderMessageFeed(els.delegateMessages, delegateItems, { moderation: false });
+  renderMessageFeed(els.adminMessages, adminHistory, { moderation: false });
+  renderMessageFeed(els.screeningFeed, pending, { moderation: true });
 }
 
-function renderMessageFeed(target, items) {
+function renderMessageFeed(target, items, options) {
   target.replaceChildren();
   if (!items.length) {
     renderEmpty(target);
@@ -274,13 +308,61 @@ function renderMessageFeed(target, items) {
         <span>${escapeHtml(item.senderName || "Unknown")}</span>
         <span>${escapeHtml(item.senderRole || "")}</span>
         <span>to ${escapeHtml(item.to || "all")}</span>
+        <span>${escapeHtml(messageStatusLabel(item))}</span>
       </div>
       <p>${escapeHtml(item.body || "")}</p>
     `;
+    if (item.status === "returned" && item.chairNote) {
+      const note = document.createElement("p");
+      note.className = "chair-note";
+      note.textContent = `Chair note: ${item.chairNote}`;
+      article.append(note);
+    }
+    if (options.moderation) {
+      article.append(createModerationControls(item));
+    }
     target.append(article);
   }
 
   target.scrollTop = target.scrollHeight;
+}
+
+function createModerationControls(item) {
+  const wrapper = document.createElement("form");
+  wrapper.className = "moderation-controls";
+  wrapper.innerHTML = `
+    <textarea rows="2" maxlength="600" placeholder="Return note, if needed"></textarea>
+    <div class="button-row">
+      <button type="button" data-action="approve">Approve</button>
+      <button type="button" class="secondary" data-action="return">Return</button>
+    </div>
+  `;
+
+  wrapper.querySelector('[data-action="approve"]').addEventListener("click", () => screenMessage(item, "approved", ""));
+  wrapper.querySelector('[data-action="return"]').addEventListener("click", () => {
+    const note = wrapper.querySelector("textarea").value.trim();
+    if (!note) {
+      setConnection("Add a return note first", "warn");
+      return;
+    }
+    screenMessage(item, "returned", note);
+  });
+
+  return wrapper;
+}
+
+async function screenMessage(item, status, chairNote) {
+  try {
+    await updateDoc(doc(db, "rooms", state.roomId, "messages", item.id), {
+      status,
+      chairNote,
+      screenedBy: state.user.email || "",
+      screenedAt: serverTimestamp()
+    });
+    setConnection(status === "approved" ? "Message approved" : "Message returned", "online");
+  } catch (error) {
+    setConnection(readableFirestoreError(error), "warn");
+  }
 }
 
 function renderDocuments(items) {
@@ -322,6 +404,51 @@ function canUseRoom() {
   return true;
 }
 
+function populateRecipientPickers() {
+  renderRecipientOptions(els.delegateMessageTo, { includeChair: true, includeDelegates: true });
+  renderRecipientOptions(els.adminMessageTo, { includeChair: false, includeDelegates: true });
+}
+
+function renderRecipientOptions(select, options) {
+  select.replaceChildren();
+  for (const participant of participants) {
+    if (!options.includeChair && participant.role === "chair") continue;
+    if (!options.includeDelegates && participant.role !== "chair") continue;
+    const option = document.createElement("option");
+    option.value = participant.email;
+    option.textContent = participant.label;
+    option.dataset.label = participant.label;
+    option.dataset.role = participant.role;
+    select.append(option);
+  }
+}
+
+function selectedRecipients(select) {
+  return Array.from(select.selectedOptions).map((option) => ({
+    email: option.value,
+    label: option.dataset.label || option.textContent
+  }));
+}
+
+function clearSelection(select) {
+  Array.from(select.options).forEach((option) => {
+    option.selected = false;
+  });
+}
+
+function isVisibleToCurrentDelegate(item) {
+  const email = state.user?.email || "";
+  if (item.senderEmail === email) return true;
+  if (item.status !== "approved") return false;
+  return Array.isArray(item.recipientEmails) && item.recipientEmails.includes(email);
+}
+
+function messageStatusLabel(item) {
+  if (item.status === "approved") return "delivered";
+  if (item.status === "returned") return "returned";
+  return "pending chair review";
+}
+
 function closeSubscriptions() {
   if (state.unsubscribeMessages) state.unsubscribeMessages();
   if (state.unsubscribeDocuments) state.unsubscribeDocuments();
@@ -351,6 +478,11 @@ function setConnection(text, tone = "") {
 function setDocumentStatus(text, tone = "") {
   els.documentStatus.textContent = text;
   els.documentStatus.className = `form-status ${tone}`.trim();
+}
+
+function setFormStatus(target, text, tone = "") {
+  target.textContent = text;
+  target.className = `form-status ${tone}`.trim();
 }
 
 function readableAuthError(error) {
