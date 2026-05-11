@@ -1,8 +1,9 @@
 export const firebaseConfig = {
-  apiKey: "PASTE_FIREBASE_API_KEY",
-  authDomain: "PASTE_PROJECT_ID.firebaseapp.com",
-  projectId: "PASTE_PROJECT_ID",
-  storageBucket: "PASTE_PROJECT_ID.firebasestorage.app",
-  messagingSenderId: "PASTE_SENDER_ID",
-  appId: "PASTE_APP_ID"
+  apiKey: "AIzaSyA5Mc-xiYVZfHm4mDAoqwzYD0-rWJmON0U",
+  authDomain: "transmun-bc505.firebaseapp.com",
+  projectId: "transmun-bc505",
+  storageBucket: "transmun-bc505.firebasestorage.app",
+  messagingSenderId: "820170532255",
+  appId: "1:820170532255:web:64cb389d131e51dd1909aa",
+  measurementId: "G-PZ307XKCN0"
 };
