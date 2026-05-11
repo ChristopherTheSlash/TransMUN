@@ -5,42 +5,38 @@ A GitHub Pages-friendly Firebase web app for simulation room messaging and docum
 ## What this uses
 
 - GitHub Pages serves the static files in `docs/`.
-- Firebase Authentication signs users in with email/password.
+- Firebase Authentication signs the browser in anonymously so Firestore can work.
 - Cloud Firestore stores room messages and document links.
 
-This is designed for a controlled simulation, not high-stakes secrecy. Only Firebase-authenticated users should be able to read/write data when the Firestore rules are published.
+This is designed for a controlled simulation, not high-stakes secrecy. Country/password accounts are stored in the static app/Firestore for event convenience.
 
 ## Firebase setup
 
 1. Create a Firebase project at <https://console.firebase.google.com/>.
 2. Add a Web app in Project settings.
 3. Copy the Firebase config into `docs/firebase-config.js`.
-4. Enable Authentication, then enable the Email/Password sign-in provider.
+4. Enable Authentication, then enable the Anonymous sign-in provider.
 5. Create a Cloud Firestore database.
 6. Open Firestore Rules and paste the contents of `firestore.rules`, then publish.
 
 ## Accounts and roles
 
-Create users manually in Firebase Console:
+Default country/password accounts live in `docs/firebase-config.js`.
 
-1. Open Authentication.
-2. Open the Users tab.
-3. Click Add user.
-4. Enter each delegate or chair email/password.
+Current built-in account names:
 
-Admin routing is controlled by the `adminEmails` list in `docs/firebase-config.js`. Any signed-in email in that list opens the admin panel; all other signed-in users open the delegate workspace.
-
-The recipient picker is controlled by the `participants` list in `docs/firebase-config.js`. Add every delegate and chair account there after creating the users in Firebase Authentication.
-
-Example:
-
-```js
-export const participants = [
-  { email: "christopherw.mun@gmail.com", label: "Chair", role: "chair" },
-  { email: "france@example.com", label: "France", role: "delegate" },
-  { email: "japan@example.com", label: "Japan", role: "delegate" }
-];
+```text
+Chair
+USA
+Britain
+France
+Egypt
+Israel
 ```
+
+Create matching Firebase Authentication Email/Password users using the hidden emails in `docs/firebase-config.js`, then set the passwords privately in Firebase Console. Delegates still type only the country/account name on the site.
+
+Admin routing is controlled by account role. Accounts with `role: "chair"` open the admin panel; accounts with `role: "delegate"` open the delegate workspace.
 
 ## Local test
 
@@ -66,16 +62,16 @@ https://your-username.github.io/your-repo-name/
 
 ## How to run the simulation
 
-- Create one Firebase email/password user for each participant.
 - Everyone signs into the same main event room.
 - Delegates can send messages to one to three recipients.
 - Delegate messages go to chair screening first.
 - Chair/admin users can approve messages for delivery or return them with a note.
 - Everyone can read document links.
-- Put chair/admin emails in `adminEmails` so those users open the admin panel.
+- Add extra country/password accounts from the admin People panel or in `docs/firebase-config.js`.
 
 ## Limits to understand
 
 - This app does not stop someone from sharing their account password.
-- Firebase rules require sign-in and basic data validation. Keep the rules published from `firestore.rules`.
+- Country/password credentials are not strong security because this is a static site.
+- Firebase rules require anonymous sign-in and basic data validation. Keep the rules published from `firestore.rules`.
 - Do not use this for passwords, payment data, legal evidence, or anything genuinely sensitive.

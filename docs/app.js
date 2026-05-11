@@ -17,17 +17,18 @@ import {
   serverTimestamp,
   updateDoc
 } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
-import { adminEmails, firebaseConfig, participants as defaultParticipants } from "./firebase-config.js";
+import { accounts as defaultAccounts, firebaseConfig } from "./firebase-config.js";
 
 const state = {
   authReady: false,
   user: null,
+  account: null,
   mode: "delegate",
   roomId: "main",
-  participants: [...defaultParticipants],
+  accounts: [...defaultAccounts],
   unsubscribeMessages: null,
   unsubscribeDocuments: null,
-  unsubscribeParticipants: null
+  unsubscribeAccounts: null
 };
 
 const els = {
@@ -38,7 +39,7 @@ const els = {
   delegatePage: document.querySelector("#delegate-page"),
   adminPage: document.querySelector("#admin-page"),
   loginForm: document.querySelector("#login-form"),
-  loginEmail: document.querySelector("#login-email"),
+  loginAccount: document.querySelector("#login-account"),
   loginPassword: document.querySelector("#login-password"),
   delegateRoom: document.querySelector("#delegate-room"),
   adminRoom: document.querySelector("#admin-room"),
@@ -62,43 +63,35 @@ const els = {
   documentStatus: document.querySelector("#document-status"),
   personForm: document.querySelector("#person-form"),
   personLabel: document.querySelector("#person-label"),
-  personEmail: document.querySelector("#person-email"),
+  personAccount: document.querySelector("#person-account"),
+  personPassword: document.querySelector("#person-password"),
   personRole: document.querySelector("#person-role"),
   personStatus: document.querySelector("#person-status"),
   peopleList: document.querySelector("#people-list"),
   emptyTemplate: document.querySelector("#empty-template")
 };
 
-const hasConfig = !Object.values(firebaseConfig)
-  .filter((value) => typeof value === "string")
-  .some((value) => value.startsWith("PASTE_"));
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
 
-let auth;
-let db;
-
-if (hasConfig) {
-  const app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
-
-  onAuthStateChanged(auth, (user) => {
-    state.authReady = true;
-    state.user = user;
-
-    if (!user) {
-      closeSubscriptions();
-      setConnection("Ready", "");
-      showPage("login");
+onAuthStateChanged(auth, (user) => {
+  state.authReady = true;
+  state.user = user;
+  if (user) {
+    const account = state.accounts.find((item) => item.authEmail === user.email);
+    if (account) {
+      state.account = account;
+      state.mode = account.role === "chair" ? "admin" : "delegate";
+      setConnection(account.label, "online");
+      subscribeAccounts();
+      openWorkspace();
       return;
     }
-
-    state.mode = isAdmin(user.email) ? "admin" : "delegate";
-    setConnection(user.email || "Signed in", "online");
-    openWorkspace();
-  });
-} else {
-  setConnection("Add Firebase config", "warn");
-}
+  }
+  setConnection("Ready", "");
+  showPage("login");
+});
 
 restoreLoginState();
 renderEmpty(els.delegateMessages);
@@ -116,27 +109,32 @@ document.querySelectorAll(".tab").forEach((tab) => {
 els.loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
-  if (!state.authReady && hasConfig) {
+  if (!state.authReady) {
     setConnection("Firebase is still connecting", "warn");
     return;
   }
 
-  localStorage.setItem("transmun.room", JSON.stringify({
-    roomId: state.roomId,
-    email: els.loginEmail.value.trim()
-  }));
+  const account = findAccount(els.loginAccount.value);
+  if (!account) {
+    setConnection("Account or password is incorrect", "warn");
+    return;
+  }
 
   try {
     setConnection("Signing in...", "");
-    await signInWithEmailAndPassword(auth, els.loginEmail.value.trim(), els.loginPassword.value);
+    await signInWithEmailAndPassword(auth, account.authEmail, els.loginPassword.value);
+    localStorage.setItem("transmun.account", account.account);
+    els.loginPassword.value = "";
   } catch (error) {
     setConnection(readableAuthError(error), "warn");
   }
 });
 
 els.signOut.addEventListener("click", async () => {
-  closeSubscriptions();
-  state.roomId = "main";
+  closeRoomSubscriptions();
+  state.account = null;
+  state.mode = "delegate";
+  localStorage.removeItem("transmun.account");
   await signOut(auth);
 });
 
@@ -169,20 +167,17 @@ els.documentForm.addEventListener("submit", async (event) => {
       title,
       url,
       note: note || "No note provided.",
-      senderName: displayName(),
+      senderAccount: state.account.account,
+      senderName: state.account.label,
       senderRole: "Chair",
-      senderId: state.user.uid,
       createdAt: serverTimestamp()
     });
-
     els.documentTitle.value = "";
     els.documentUrl.value = "";
     els.documentNote.value = "";
     setDocumentStatus("Document link posted.");
   } catch (error) {
-    const message = readableFirestoreError(error);
-    setDocumentStatus(message, "warn");
-    setConnection(message, "warn");
+    showFirestoreError(error, setDocumentStatus);
   } finally {
     button.disabled = false;
   }
@@ -190,38 +185,33 @@ els.documentForm.addEventListener("submit", async (event) => {
 
 els.personForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!canUseRoom()) return;
-  if (state.mode !== "admin") {
-    setPersonStatus("Only admin users can edit people.", "warn");
-    return;
-  }
+  if (!canUseRoom() || state.mode !== "admin") return;
 
   const label = els.personLabel.value.trim();
-  const email = normalizeEmail(els.personEmail.value);
+  const account = normalizeAccount(els.personAccount.value);
   const role = els.personRole.value;
-  if (!label || !email) return;
+  if (!label || !account) return;
 
   const button = els.personForm.querySelector("button");
   button.disabled = true;
-  setPersonStatus("Adding person...");
+  setPersonStatus("Adding account...");
 
   try {
-    await addDoc(collection(db, "rooms", state.roomId, "participants"), {
+    await addDoc(collection(db, "rooms", state.roomId, "accounts"), {
+      account,
+      authEmail: `${account.toLowerCase()}@transmun.invalid`,
       label,
-      email,
       role,
-      createdBy: state.user.email || "",
+      createdBy: state.account.account,
       createdAt: serverTimestamp()
     });
-
     els.personLabel.value = "";
-    els.personEmail.value = "";
+    els.personAccount.value = "";
+    els.personPassword.value = "";
     els.personRole.value = "delegate";
-    setPersonStatus("Person added.");
+    setPersonStatus("Account added.");
   } catch (error) {
-    const message = readableFirestoreError(error);
-    setPersonStatus(message, "warn");
-    setConnection(message, "warn");
+    showFirestoreError(error, setPersonStatus);
   } finally {
     button.disabled = false;
   }
@@ -240,14 +230,11 @@ function showPage(page) {
   els.delegatePage.classList.toggle("active", page === "delegate");
   els.adminPage.classList.toggle("active", page === "admin");
   els.signOut.classList.toggle("hidden", page === "login");
-
-  if (page === "admin") {
-    els.pageTitle.textContent = "Admin panel";
-  } else if (page === "delegate") {
-    els.pageTitle.textContent = "Delegate workspace";
-  } else {
-    els.pageTitle.textContent = "Delegate and chair portal";
-  }
+  els.pageTitle.textContent = page === "admin"
+    ? "Admin panel"
+    : page === "delegate"
+      ? "Delegate workspace"
+      : "Delegate and chair portal";
 }
 
 function switchTab(tab) {
@@ -260,14 +247,28 @@ function switchTab(tab) {
   document.querySelector(`#${tab.dataset.view}`).classList.add("active");
 }
 
+function subscribeAccounts() {
+  if (state.unsubscribeAccounts) return;
+  const accountQuery = query(
+    collection(db, "rooms", state.roomId, "accounts"),
+    orderBy("label", "asc"),
+    limit(200)
+  );
+  state.unsubscribeAccounts = onSnapshot(accountQuery, (snapshot) => {
+    const remoteAccounts = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }));
+    state.accounts = mergeAccounts(defaultAccounts, remoteAccounts);
+    populateRecipientPickers();
+    renderPeople(state.accounts);
+  }, (error) => setConnection(readableFirestoreError(error), "warn"));
+}
+
 function subscribeToRoom() {
-  closeSubscriptions();
+  closeRoomSubscriptions();
   renderEmpty(els.delegateMessages);
   renderEmpty(els.adminMessages);
   renderEmpty(els.screeningFeed);
   renderEmpty(els.delegateDocuments);
   renderEmpty(els.adminDocuments);
-  renderEmpty(els.peopleList);
 
   const messageQuery = query(
     collection(db, "rooms", state.roomId, "messages"),
@@ -279,27 +280,13 @@ function subscribeToRoom() {
     orderBy("createdAt", "desc"),
     limit(80)
   );
-  const participantQuery = query(
-    collection(db, "rooms", state.roomId, "participants"),
-    orderBy("label", "asc"),
-    limit(200)
-  );
 
-  state.unsubscribeMessages = onSnapshot(messageQuery, async (snapshot) => {
-    const items = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    renderMessages(items);
+  state.unsubscribeMessages = onSnapshot(messageQuery, (snapshot) => {
+    renderMessages(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
   }, (error) => setConnection(readableFirestoreError(error), "warn"));
 
-  state.unsubscribeDocuments = onSnapshot(documentQuery, async (snapshot) => {
-    const items = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    renderDocuments(items);
-  }, (error) => setConnection(readableFirestoreError(error), "warn"));
-
-  state.unsubscribeParticipants = onSnapshot(participantQuery, (snapshot) => {
-    const remoteParticipants = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    state.participants = mergeParticipants(defaultParticipants, remoteParticipants);
-    populateRecipientPickers();
-    renderPeople(state.participants);
+  state.unsubscribeDocuments = onSnapshot(documentQuery, (snapshot) => {
+    renderDocuments(snapshot.docs.map((item) => ({ id: item.id, ...item.data() })));
   }, (error) => setConnection(readableFirestoreError(error), "warn"));
 }
 
@@ -316,31 +303,25 @@ async function sendMessage(toInput, bodyInput, statusTarget) {
   }
 
   const isChairMessage = state.mode === "admin";
-  const status = isChairMessage ? "approved" : "pending";
-
   try {
     await addDoc(collection(db, "rooms", state.roomId, "messages"), {
       type: "message",
-      status,
+      status: isChairMessage ? "approved" : "pending",
       to: recipients.map((recipient) => recipient.label).join(", "),
-      recipientEmails: recipients.map((recipient) => recipient.email),
+      recipientAccounts: recipients.map((recipient) => recipient.account),
       recipientLabels: recipients.map((recipient) => recipient.label),
       body: plainText,
       chairNote: "",
-      senderEmail: state.user.email || "",
-      senderName: displayName(),
+      senderAccount: state.account.account,
+      senderName: state.account.label,
       senderRole: isChairMessage ? "Chair" : "Delegate",
-      senderId: state.user.uid,
       createdAt: serverTimestamp()
     });
-
     bodyInput.value = "";
     clearSelection(toInput);
     setFormStatus(statusTarget, isChairMessage ? "Message delivered." : "Message sent to chair screening.");
   } catch (error) {
-    const message = readableFirestoreError(error);
-    setFormStatus(statusTarget, message, "warn");
-    setConnection(message, "warn");
+    showFirestoreError(error, (text, tone) => setFormStatus(statusTarget, text, tone));
   }
 }
 
@@ -348,7 +329,6 @@ function renderMessages(items) {
   const pending = items.filter((item) => item.status === "pending");
   const adminHistory = items.filter((item) => item.status !== "pending");
   const delegateItems = items.filter((item) => isVisibleToCurrentDelegate(item));
-
   renderMessageFeed(els.delegateMessages, delegateItems, { moderation: false });
   renderMessageFeed(els.adminMessages, adminHistory, { moderation: false });
   renderMessageFeed(els.screeningFeed, pending, { moderation: true });
@@ -360,10 +340,9 @@ function renderMessageFeed(target, items, options) {
     renderEmpty(target);
     return;
   }
-
   for (const item of items) {
     const article = document.createElement("article");
-    article.className = `message${item.senderId === state.user?.uid ? " mine" : ""}`;
+    article.className = `message${item.senderAccount === state.account?.account ? " mine" : ""}`;
     article.innerHTML = `
       <div class="meta">
         <span>${escapeHtml(item.senderName || "Unknown")}</span>
@@ -379,12 +358,9 @@ function renderMessageFeed(target, items, options) {
       note.textContent = `Chair note: ${item.chairNote}`;
       article.append(note);
     }
-    if (options.moderation) {
-      article.append(createModerationControls(item));
-    }
+    if (options.moderation) article.append(createModerationControls(item));
     target.append(article);
   }
-
   target.scrollTop = target.scrollHeight;
 }
 
@@ -398,7 +374,6 @@ function createModerationControls(item) {
       <button type="button" class="secondary" data-action="return">Return</button>
     </div>
   `;
-
   wrapper.querySelector('[data-action="approve"]').addEventListener("click", () => screenMessage(item, "approved", ""));
   wrapper.querySelector('[data-action="return"]').addEventListener("click", () => {
     const note = wrapper.querySelector("textarea").value.trim();
@@ -408,7 +383,6 @@ function createModerationControls(item) {
     }
     screenMessage(item, "returned", note);
   });
-
   return wrapper;
 }
 
@@ -417,7 +391,7 @@ async function screenMessage(item, status, chairNote) {
     await updateDoc(doc(db, "rooms", state.roomId, "messages", item.id), {
       status,
       chairNote,
-      screenedBy: state.user.email || "",
+      screenedBy: state.account.account,
       screenedAt: serverTimestamp()
     });
     setConnection(status === "approved" ? "Message approved" : "Message returned", "online");
@@ -437,7 +411,6 @@ function renderDocumentList(target, items) {
     renderEmpty(target);
     return;
   }
-
   for (const item of items) {
     const article = document.createElement("article");
     article.className = "document";
@@ -458,7 +431,7 @@ function renderEmpty(target) {
 }
 
 function canUseRoom() {
-  if (!state.user || !state.roomId) {
+  if (!state.user || !state.account) {
     setConnection("Log in first", "warn");
     return false;
   }
@@ -472,13 +445,12 @@ function populateRecipientPickers() {
 
 function renderRecipientOptions(select, options) {
   select.replaceChildren();
-  const currentEmail = normalizeEmail(state.user?.email || "");
-  const filtered = state.participants.filter((participant) => {
-    if (!options.includeChair && participant.role === "chair") return false;
-    if (!options.includeDelegates && participant.role !== "chair") return false;
-    return normalizeEmail(participant.email) !== currentEmail;
+  const currentAccount = state.account?.account || "";
+  const filtered = state.accounts.filter((account) => {
+    if (!options.includeChair && account.role === "chair") return false;
+    if (!options.includeDelegates && account.role !== "chair") return false;
+    return account.account !== currentAccount;
   });
-
   if (!filtered.length) {
     const option = document.createElement("option");
     option.textContent = "No recipients available yet";
@@ -486,22 +458,19 @@ function renderRecipientOptions(select, options) {
     select.append(option);
     return;
   }
-
-  for (const participant of filtered) {
-    if (!options.includeChair && participant.role === "chair") continue;
-    if (!options.includeDelegates && participant.role !== "chair") continue;
+  for (const account of filtered) {
     const option = document.createElement("option");
-    option.value = normalizeEmail(participant.email);
-    option.textContent = participant.label;
-    option.dataset.label = participant.label;
-    option.dataset.role = participant.role;
+    option.value = account.account;
+    option.textContent = account.label;
+    option.dataset.label = account.label;
+    option.dataset.role = account.role;
     select.append(option);
   }
 }
 
 function selectedRecipients(select) {
   return Array.from(select.selectedOptions).filter((option) => !option.disabled).map((option) => ({
-    email: option.value,
+    account: option.value,
     label: option.dataset.label || option.textContent
   }));
 }
@@ -513,10 +482,10 @@ function clearSelection(select) {
 }
 
 function isVisibleToCurrentDelegate(item) {
-  const email = state.user?.email || "";
-  if (item.senderEmail === email) return true;
+  const account = state.account?.account || "";
+  if (item.senderAccount === account) return true;
   if (item.status !== "approved") return false;
-  return Array.isArray(item.recipientEmails) && item.recipientEmails.includes(email);
+  return Array.isArray(item.recipientAccounts) && item.recipientAccounts.includes(account);
 }
 
 function messageStatusLabel(item) {
@@ -525,38 +494,37 @@ function messageStatusLabel(item) {
   return "pending chair review";
 }
 
-function closeSubscriptions() {
+function closeRoomSubscriptions() {
   if (state.unsubscribeMessages) state.unsubscribeMessages();
   if (state.unsubscribeDocuments) state.unsubscribeDocuments();
-  if (state.unsubscribeParticipants) state.unsubscribeParticipants();
   state.unsubscribeMessages = null;
   state.unsubscribeDocuments = null;
-  state.unsubscribeParticipants = null;
 }
 
 function restoreLoginState() {
-  const saved = JSON.parse(localStorage.getItem("transmun.room") || "null");
-  if (!saved) return;
-  els.loginEmail.value = saved.email || "";
+  const savedAccount = localStorage.getItem("transmun.account");
+  if (savedAccount) els.loginAccount.value = savedAccount;
 }
 
-function isAdmin(email) {
-  return adminEmails.map((item) => item.toLowerCase()).includes((email || "").toLowerCase());
+function findAccount(value) {
+  const normalized = normalizeAccount(value);
+  return state.accounts.find((account) => normalizeAccount(account.account) === normalized);
 }
 
 function displayName() {
-  return state.user?.email?.split("@")[0] || "Participant";
+  return state.account?.label || "Participant";
 }
 
-function mergeParticipants(fallback, remote) {
+function mergeAccounts(fallback, remote) {
   const merged = new Map();
-  for (const participant of [...fallback, ...remote]) {
-    const email = normalizeEmail(participant.email || "");
-    if (!email) continue;
-    merged.set(email, {
-      email,
-      label: participant.label || email,
-      role: participant.role === "chair" ? "chair" : "delegate"
+  for (const account of [...fallback, ...remote]) {
+    const key = normalizeAccount(account.account || "");
+    if (!key) continue;
+    merged.set(key, {
+      account: key,
+      authEmail: account.authEmail || `${key.toLowerCase()}@transmun.invalid`,
+      label: account.label || key,
+      role: account.role === "chair" ? "chair" : "delegate"
     });
   }
   return Array.from(merged.values()).sort((a, b) => a.label.localeCompare(b.label));
@@ -568,14 +536,13 @@ function renderPeople(items) {
     renderEmpty(els.peopleList);
     return;
   }
-
   for (const item of items) {
     const row = document.createElement("article");
     row.className = "person-row";
     row.innerHTML = `
       <div>
         <strong>${escapeHtml(item.label)}</strong>
-        <p>${escapeHtml(item.email)}</p>
+        <p>${escapeHtml(item.account)}</p>
       </div>
       <span>${escapeHtml(item.role)}</span>
     `;
@@ -583,8 +550,8 @@ function renderPeople(items) {
   }
 }
 
-function normalizeEmail(email) {
-  return String(email).trim().toLowerCase();
+function normalizeAccount(value) {
+  return String(value).trim();
 }
 
 function setConnection(text, tone = "") {
@@ -607,26 +574,28 @@ function setFormStatus(target, text, tone = "") {
   target.className = `form-status ${tone}`.trim();
 }
 
-function readableAuthError(error) {
-  const code = error?.code || "";
-  if (code.includes("invalid-credential") || code.includes("wrong-password") || code.includes("user-not-found")) {
-    return "Email or password is incorrect";
-  }
-  if (code.includes("operation-not-allowed")) {
-    return "Enable Email/Password in Firebase Auth";
-  }
-  return error?.message || "Could not sign in";
+function showFirestoreError(error, setter) {
+  const message = readableFirestoreError(error);
+  setter(message, "warn");
+  setConnection(message, "warn");
 }
 
 function readableFirestoreError(error) {
   const code = error?.code || "";
-  if (code.includes("permission-denied")) {
-    return "Firestore rules blocked this. Publish the latest rules.";
-  }
-  if (code.includes("failed-precondition")) {
-    return "Firestore needs a database/index setup step.";
-  }
+  if (code.includes("permission-denied")) return "Firestore rules blocked this. Publish the latest rules.";
+  if (code.includes("failed-precondition")) return "Firestore needs a database/index setup step.";
   return error?.message || "Firestore request failed";
+}
+
+function readableAuthError(error) {
+  const code = error?.code || "";
+  if (code.includes("invalid-credential") || code.includes("wrong-password") || code.includes("user-not-found")) {
+    return "Account or password is incorrect";
+  }
+  if (code.includes("operation-not-allowed")) {
+    return "Enable Email/Password in Firebase Auth.";
+  }
+  return error?.message || "Could not sign in";
 }
 
 function escapeHtml(value) {

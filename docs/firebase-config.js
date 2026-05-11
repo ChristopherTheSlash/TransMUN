@@ -8,14 +8,11 @@ export const firebaseConfig = {
   measurementId: "G-PZ307XKCN0"
 };
 
-export const adminEmails = [
-  "christopherw.mun@gmail.com"
-];
-
-export const participants = [
-  {
-    email: "christopherw.mun@gmail.com",
-    label: "Chair",
-    role: "chair"
-  }
+export const accounts = [
+  { account: "Chair", authEmail: "chair@transmun.invalid", label: "Chair", role: "chair" },
+  { account: "USA", authEmail: "usa@transmun.invalid", label: "USA", role: "delegate" },
+  { account: "Britain", authEmail: "britain@transmun.invalid", label: "Britain", role: "delegate" },
+  { account: "France", authEmail: "france@transmun.invalid", label: "France", role: "delegate" },
+  { account: "Egypt", authEmail: "egypt@transmun.invalid", label: "Egypt", role: "delegate" },
+  { account: "Israel", authEmail: "israel@transmun.invalid", label: "Israel", role: "delegate" }
 ];
