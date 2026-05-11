@@ -27,34 +27,22 @@ Current built-in account names:
 
 ```text
 Chair
-Example 1 - USA
-Example 2 - Britain
-Example 3 - France
-Example 4 - Egypt
-Example 5 - Israel
-Example 6 - USA
-Example 7 - Britain
-Example 8 - France
-Example 9 - Egypt
-Example 10 - Israel
+France
+Israel
+Britain
+USA
 ```
 
-Create matching Firebase Authentication Email/Password users using the hidden emails in `docs/firebase-config.js`, then set the passwords privately in Firebase Console. Delegates still type only the country/account name on the site.
+These accounts map to the Firebase Authentication users listed below. Delegates type only the account name on the site.
 
-The built-in Firebase Auth emails are:
+Firebase Auth emails:
 
 ```text
-chair@transmun.invalid
-example1@transmun.invalid
-example2@transmun.invalid
-example3@transmun.invalid
-example4@transmun.invalid
-example5@transmun.invalid
-example6@transmun.invalid
-example7@transmun.invalid
-example8@transmun.invalid
-example9@transmun.invalid
-example10@transmun.invalid
+christopherw.mun@gmail.com
+france@gmail.com
+israel@gmail.com
+uk@gmail.com
+us@gmail.com
 ```
 
 Admin routing is controlled by account role. Accounts with `role: "chair"` open the admin panel; accounts with `role: "delegate"` open the delegate workspace.
