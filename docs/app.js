@@ -1,5 +1,10 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-app.js";
-import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
+import {
+  getAuth,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut
+} from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
 import {
   addDoc,
   collection,
@@ -10,12 +15,12 @@ import {
   query,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
-import { firebaseConfig } from "./firebase-config.js";
+import { adminEmails, firebaseConfig } from "./firebase-config.js";
 
 const state = {
-  appReady: false,
+  authReady: false,
   user: null,
-  profile: null,
+  mode: "delegate",
   roomId: "",
   passphrase: "",
   unsubscribeMessages: null,
@@ -24,142 +29,198 @@ const state = {
 
 const els = {
   connection: document.querySelector("#connection"),
-  joinForm: document.querySelector("#join-form"),
-  displayName: document.querySelector("#display-name"),
-  role: document.querySelector("#role"),
+  signOut: document.querySelector("#sign-out"),
+  pageTitle: document.querySelector("#page-title"),
+  loginPage: document.querySelector("#login-page"),
+  delegatePage: document.querySelector("#delegate-page"),
+  adminPage: document.querySelector("#admin-page"),
+  loginForm: document.querySelector("#login-form"),
+  loginEmail: document.querySelector("#login-email"),
+  loginPassword: document.querySelector("#login-password"),
   roomCode: document.querySelector("#room-code"),
   passphrase: document.querySelector("#passphrase"),
-  adminMode: document.querySelector("#admin-mode"),
-  roomLabel: document.querySelector("#room-label"),
-  leaveRoom: document.querySelector("#leave-room"),
-  messageForm: document.querySelector("#message-form"),
-  messageTo: document.querySelector("#message-to"),
-  messageBody: document.querySelector("#message-body"),
-  messages: document.querySelector("#messages"),
-  documentForm: document.querySelector("#document-form"),
+  delegateRoom: document.querySelector("#delegate-room"),
+  adminRoom: document.querySelector("#admin-room"),
+  delegateMessages: document.querySelector("#delegate-messages-feed"),
+  adminMessages: document.querySelector("#admin-messages-feed"),
+  delegateMessageForm: document.querySelector("#delegate-message-form"),
+  delegateMessageTo: document.querySelector("#delegate-message-to"),
+  delegateMessageBody: document.querySelector("#delegate-message-body"),
+  adminMessageForm: document.querySelector("#admin-message-form"),
+  adminMessageTo: document.querySelector("#admin-message-to"),
+  adminMessageBody: document.querySelector("#admin-message-body"),
+  delegateDocuments: document.querySelector("#delegate-documents"),
+  adminDocuments: document.querySelector("#admin-documents-list"),
+  documentForm: document.querySelector("#document-link-form"),
   documentTitle: document.querySelector("#document-title"),
-  documentBody: document.querySelector("#document-body"),
-  documents: document.querySelector("#documents"),
+  documentUrl: document.querySelector("#document-url"),
+  documentNote: document.querySelector("#document-note"),
   emptyTemplate: document.querySelector("#empty-template")
 };
 
-const hasConfig = !Object.values(firebaseConfig).some((value) => value.startsWith("PASTE_"));
+const hasConfig = !Object.values(firebaseConfig)
+  .filter((value) => typeof value === "string")
+  .some((value) => value.startsWith("PASTE_"));
 
+let auth;
 let db;
 
 if (hasConfig) {
   const app = initializeApp(firebaseConfig);
-  const auth = getAuth(app);
+  auth = getAuth(app);
   db = getFirestore(app);
 
   onAuthStateChanged(auth, (user) => {
+    state.authReady = true;
     state.user = user;
-    state.appReady = Boolean(user);
-    setConnection(user ? "Connected" : "Connecting...", user ? "online" : "");
-  });
 
-  signInAnonymously(auth).catch((error) => {
-    setConnection(error.message, "warn");
+    if (!user) {
+      closeSubscriptions();
+      setConnection("Ready", "");
+      showPage("login");
+      return;
+    }
+
+    state.mode = isAdmin(user.email) ? "admin" : "delegate";
+    setConnection(user.email || "Signed in", "online");
+    openWorkspace();
   });
 } else {
   setConnection("Add Firebase config", "warn");
 }
 
-restoreProfile();
-renderEmpty(els.messages);
-renderEmpty(els.documents);
+restoreLoginState();
+renderEmpty(els.delegateMessages);
+renderEmpty(els.adminMessages);
+renderEmpty(els.delegateDocuments);
+renderEmpty(els.adminDocuments);
 
 document.querySelectorAll(".tab").forEach((tab) => {
-  tab.addEventListener("click", () => {
-    document.querySelectorAll(".tab, .view").forEach((node) => node.classList.remove("active"));
-    tab.classList.add("active");
-    document.querySelector(`#${tab.dataset.view}-view`).classList.add("active");
-  });
+  tab.addEventListener("click", () => switchTab(tab));
 });
 
-els.joinForm.addEventListener("submit", (event) => {
+els.loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
-  if (!state.appReady) {
-    setConnection(hasConfig ? "Firebase is still connecting" : "Add Firebase config", "warn");
+  if (!state.authReady && hasConfig) {
+    setConnection("Firebase is still connecting", "warn");
     return;
   }
 
-  state.profile = {
-    displayName: els.displayName.value.trim(),
-    role: els.role.value.trim(),
-    adminMode: els.adminMode.checked
-  };
   state.roomId = normalizeRoom(els.roomCode.value);
   state.passphrase = els.passphrase.value;
-  localStorage.setItem("transmun.profile", JSON.stringify({
-    ...state.profile,
-    roomId: state.roomId
+  localStorage.setItem("transmun.room", JSON.stringify({
+    roomId: state.roomId,
+    email: els.loginEmail.value.trim()
   }));
 
-  els.roomLabel.textContent = `Room: ${state.roomId}`;
-  els.documentForm.classList.toggle("hidden", !state.profile.adminMode);
-  subscribeToRoom();
+  try {
+    setConnection("Signing in...", "");
+    await signInWithEmailAndPassword(auth, els.loginEmail.value.trim(), els.loginPassword.value);
+  } catch (error) {
+    setConnection(readableAuthError(error), "warn");
+  }
 });
 
-els.leaveRoom.addEventListener("click", () => {
+els.signOut.addEventListener("click", async () => {
   closeSubscriptions();
   state.roomId = "";
   state.passphrase = "";
-  els.roomLabel.textContent = "No room joined";
   els.passphrase.value = "";
-  els.documentForm.classList.add("hidden");
-  renderEmpty(els.messages);
-  renderEmpty(els.documents);
+  await signOut(auth);
 });
 
-els.messageForm.addEventListener("submit", async (event) => {
+els.delegateMessageForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!canWrite()) return;
+  await sendMessage(els.delegateMessageTo, els.delegateMessageBody);
+});
 
-  const plainText = els.messageBody.value.trim();
-  const to = els.messageTo.value.trim() || "all";
-  if (!plainText) return;
-
-  await addEncryptedDoc(collection(db, "rooms", state.roomId, "messages"), plainText, {
-    type: "message",
-    to
-  });
-
-  els.messageBody.value = "";
+els.adminMessageForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  await sendMessage(els.adminMessageTo, els.adminMessageBody);
 });
 
 els.documentForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!canWrite()) return;
+  if (!canUseRoom()) return;
 
   const title = els.documentTitle.value.trim();
-  const body = els.documentBody.value.trim();
-  if (!title || !body) return;
+  const url = els.documentUrl.value.trim();
+  const note = els.documentNote.value.trim();
+  if (!title || !url) return;
 
-  await addEncryptedDoc(collection(db, "rooms", state.roomId, "documents"), body, {
+  const encrypted = await encryptText(note || "No note provided.", state.passphrase);
+  await addDoc(collection(db, "rooms", state.roomId, "documents"), {
+    ...encrypted,
     type: "document",
-    title
+    title,
+    url,
+    senderName: displayName(),
+    senderRole: "Chair",
+    senderId: state.user.uid,
+    createdAt: serverTimestamp()
   });
 
   els.documentTitle.value = "";
-  els.documentBody.value = "";
+  els.documentUrl.value = "";
+  els.documentNote.value = "";
 });
+
+function openWorkspace() {
+  if (!state.roomId || !state.passphrase) {
+    setConnection("Enter room passphrase again", "warn");
+    showPage("login");
+    return;
+  }
+
+  const roomText = `Room: ${state.roomId}`;
+  els.delegateRoom.textContent = roomText;
+  els.adminRoom.textContent = roomText;
+  showPage(state.mode);
+  subscribeToRoom();
+}
+
+function showPage(page) {
+  els.loginPage.classList.toggle("active", page === "login");
+  els.delegatePage.classList.toggle("active", page === "delegate");
+  els.adminPage.classList.toggle("active", page === "admin");
+  els.signOut.classList.toggle("hidden", page === "login");
+
+  if (page === "admin") {
+    els.pageTitle.textContent = "Admin panel";
+  } else if (page === "delegate") {
+    els.pageTitle.textContent = "Delegate workspace";
+  } else {
+    els.pageTitle.textContent = "Delegate and chair portal";
+  }
+}
+
+function switchTab(tab) {
+  const scope = tab.dataset.scope;
+  document.querySelectorAll(`.tab[data-scope="${scope}"]`).forEach((node) => node.classList.remove("active"));
+  tab.classList.add("active");
+
+  const page = scope === "admin" ? els.adminPage : els.delegatePage;
+  page.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
+  document.querySelector(`#${tab.dataset.view}`).classList.add("active");
+}
 
 function subscribeToRoom() {
   closeSubscriptions();
-  renderEmpty(els.messages);
-  renderEmpty(els.documents);
+  renderEmpty(els.delegateMessages);
+  renderEmpty(els.adminMessages);
+  renderEmpty(els.delegateDocuments);
+  renderEmpty(els.adminDocuments);
 
   const messageQuery = query(
     collection(db, "rooms", state.roomId, "messages"),
     orderBy("createdAt", "asc"),
-    limit(120)
+    limit(150)
   );
   const documentQuery = query(
     collection(db, "rooms", state.roomId, "documents"),
     orderBy("createdAt", "desc"),
-    limit(50)
+    limit(80)
   );
 
   state.unsubscribeMessages = onSnapshot(messageQuery, async (snapshot) => {
@@ -173,16 +234,25 @@ function subscribeToRoom() {
   }, (error) => setConnection(error.message, "warn"));
 }
 
-async function addEncryptedDoc(targetCollection, plainText, extra) {
+async function sendMessage(toInput, bodyInput) {
+  if (!canUseRoom()) return;
+
+  const plainText = bodyInput.value.trim();
+  const to = toInput.value.trim() || "all";
+  if (!plainText) return;
+
   const encrypted = await encryptText(plainText, state.passphrase);
-  await addDoc(targetCollection, {
-    ...extra,
+  await addDoc(collection(db, "rooms", state.roomId, "messages"), {
     ...encrypted,
-    senderName: state.profile.displayName,
-    senderRole: state.profile.role,
+    type: "message",
+    to,
+    senderName: displayName(),
+    senderRole: state.mode === "admin" ? "Chair" : "Delegate",
     senderId: state.user.uid,
     createdAt: serverTimestamp()
   });
+
+  bodyInput.value = "";
 }
 
 async function decryptRecord(record, id) {
@@ -203,9 +273,14 @@ async function decryptRecord(record, id) {
 }
 
 function renderMessages(items) {
-  els.messages.replaceChildren();
+  renderMessageFeed(els.delegateMessages, items);
+  renderMessageFeed(els.adminMessages, items);
+}
+
+function renderMessageFeed(target, items) {
+  target.replaceChildren();
   if (!items.length) {
-    renderEmpty(els.messages);
+    renderEmpty(target);
     return;
   }
 
@@ -220,16 +295,21 @@ function renderMessages(items) {
       </div>
       <p>${escapeHtml(item.plainText)}</p>
     `;
-    els.messages.append(article);
+    target.append(article);
   }
 
-  els.messages.scrollTop = els.messages.scrollHeight;
+  target.scrollTop = target.scrollHeight;
 }
 
 function renderDocuments(items) {
-  els.documents.replaceChildren();
+  renderDocumentList(els.delegateDocuments, items);
+  renderDocumentList(els.adminDocuments, items);
+}
+
+function renderDocumentList(target, items) {
+  target.replaceChildren();
   if (!items.length) {
-    renderEmpty(els.documents);
+    renderEmpty(target);
     return;
   }
 
@@ -241,9 +321,10 @@ function renderDocuments(items) {
         <span>${escapeHtml(item.title || "Untitled document")}</span>
         <span>${escapeHtml(item.senderName || "Chair")}</span>
       </div>
+      <a href="${escapeAttribute(item.url || "#")}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.url || "No link")}</a>
       <p>${escapeHtml(item.plainText)}</p>
     `;
-    els.documents.append(article);
+    target.append(article);
   }
 }
 
@@ -251,9 +332,9 @@ function renderEmpty(target) {
   target.replaceChildren(els.emptyTemplate.content.cloneNode(true));
 }
 
-function canWrite() {
-  if (!state.appReady || !state.roomId || !state.passphrase) {
-    setConnection("Join a room first", "warn");
+function canUseRoom() {
+  if (!state.user || !state.roomId || !state.passphrase) {
+    setConnection("Log in and join a room first", "warn");
     return false;
   }
   return true;
@@ -266,22 +347,39 @@ function closeSubscriptions() {
   state.unsubscribeDocuments = null;
 }
 
-function restoreProfile() {
-  const saved = JSON.parse(localStorage.getItem("transmun.profile") || "null");
+function restoreLoginState() {
+  const saved = JSON.parse(localStorage.getItem("transmun.room") || "null");
   if (!saved) return;
-  els.displayName.value = saved.displayName || "";
-  els.role.value = saved.role || "";
-  els.roomCode.value = saved.roomId || "";
-  els.adminMode.checked = Boolean(saved.adminMode);
+  els.loginEmail.value = saved.email || "";
+  els.roomCode.value = saved.roomId || "main";
 }
 
 function normalizeRoom(value) {
   return value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "main";
 }
 
+function isAdmin(email) {
+  return adminEmails.map((item) => item.toLowerCase()).includes((email || "").toLowerCase());
+}
+
+function displayName() {
+  return state.user?.email?.split("@")[0] || "Participant";
+}
+
 function setConnection(text, tone = "") {
   els.connection.textContent = text;
   els.connection.className = `connection ${tone}`.trim();
+}
+
+function readableAuthError(error) {
+  const code = error?.code || "";
+  if (code.includes("invalid-credential") || code.includes("wrong-password") || code.includes("user-not-found")) {
+    return "Email or password is incorrect";
+  }
+  if (code.includes("operation-not-allowed")) {
+    return "Enable Email/Password in Firebase Auth";
+  }
+  return error?.message || "Could not sign in";
 }
 
 async function encryptText(plainText, passphrase) {
@@ -353,4 +451,8 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(value).replaceAll("`", "&#096;");
 }

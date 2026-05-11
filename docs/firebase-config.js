@@ -7,3 +7,7 @@ export const firebaseConfig = {
   appId: "1:820170532255:web:64cb389d131e51dd1909aa",
   measurementId: "G-PZ307XKCN0"
 };
+
+export const adminEmails = [
+  "christopher10182004@gmail.com"
+];

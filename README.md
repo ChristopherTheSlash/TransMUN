@@ -16,9 +16,20 @@ This is designed for simulation privacy, not high-stakes secrecy. Room names and
 1. Create a Firebase project at <https://console.firebase.google.com/>.
 2. Add a Web app in Project settings.
 3. Copy the Firebase config into `docs/firebase-config.js`.
-4. Enable Authentication, then enable the Anonymous sign-in provider.
+4. Enable Authentication, then enable the Email/Password sign-in provider.
 5. Create a Cloud Firestore database.
 6. Open Firestore Rules and paste the contents of `firestore.rules`, then publish.
+
+## Accounts and roles
+
+Create users manually in Firebase Console:
+
+1. Open Authentication.
+2. Open the Users tab.
+3. Click Add user.
+4. Enter each delegate or chair email/password.
+
+Admin routing is controlled by the `adminEmails` list in `docs/firebase-config.js`. Any signed-in email in that list opens the admin panel; all other signed-in users open the delegate workspace.
 
 ## Local test
 
@@ -46,9 +57,10 @@ https://your-username.github.io/your-repo-name/
 
 - Give each room a room code, such as `committee-a`.
 - Give that room one passphrase. Use at least 8 characters; longer is better.
+- Create one Firebase email/password user for each participant.
 - Everyone in the same room can read the same encrypted room messages.
 - Use different room codes/passphrases for private channels.
-- Enable "Chair/document dispatch mode" only for chair/admin users who should post documents.
+- Put chair/admin emails in `adminEmails` so those users open the admin panel.
 
 ## Limits to understand
 

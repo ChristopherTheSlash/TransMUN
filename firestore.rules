@@ -33,7 +33,9 @@ service cloud.firestore {
         && validRoomItem()
         && request.resource.data.type == "document"
         && request.resource.data.title is string
-        && request.resource.data.title.size() <= 90;
+        && request.resource.data.title.size() <= 90
+        && request.resource.data.url is string
+        && request.resource.data.url.size() <= 500;
       allow update, delete: if false;
     }
   }
