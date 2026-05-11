@@ -59,5 +59,16 @@ service cloud.firestore {
         && request.resource.data.note.size() <= 2000;
       allow update, delete: if false;
     }
+
+    match /rooms/{roomId}/participants/{participantId} {
+      allow read: if signedIn();
+      allow create: if chair()
+        && request.resource.data.label is string
+        && request.resource.data.label.size() <= 50
+        && request.resource.data.email is string
+        && request.resource.data.email.size() <= 120
+        && request.resource.data.role in ["delegate", "chair"];
+      allow update, delete: if chair();
+    }
   }
 }

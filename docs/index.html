@@ -90,6 +90,7 @@
           <nav class="tabs" aria-label="Admin views">
             <button class="tab active" type="button" data-scope="admin" data-view="admin-messages">Messaging</button>
             <button class="tab" type="button" data-scope="admin" data-view="admin-documents">Documents</button>
+            <button class="tab" type="button" data-scope="admin" data-view="admin-people">People</button>
           </nav>
         </aside>
 
@@ -131,6 +132,26 @@
               <p id="document-status" class="form-status" role="status"></p>
             </form>
             <div id="admin-documents-list" class="documents" aria-live="polite"></div>
+          </section>
+
+          <section id="admin-people" class="view" aria-labelledby="admin-people-title">
+            <div class="section-head">
+              <div>
+                <h2 id="admin-people-title">People</h2>
+                <p>Add delegate and chair accounts to the recipient list.</p>
+              </div>
+            </div>
+            <form id="person-form" class="person-form">
+              <input id="person-label" maxlength="50" placeholder="Display name, delegation, or chair label" required>
+              <input id="person-email" type="email" placeholder="account@example.com" required>
+              <select id="person-role" required>
+                <option value="delegate">Delegate</option>
+                <option value="chair">Chair</option>
+              </select>
+              <button type="submit">Add person</button>
+              <p id="person-status" class="form-status" role="status"></p>
+            </form>
+            <div id="people-list" class="people-list" aria-live="polite"></div>
           </section>
         </section>
       </section>

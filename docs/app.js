@@ -17,15 +17,17 @@ import {
   serverTimestamp,
   updateDoc
 } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
-import { adminEmails, firebaseConfig, participants } from "./firebase-config.js";
+import { adminEmails, firebaseConfig, participants as defaultParticipants } from "./firebase-config.js";
 
 const state = {
   authReady: false,
   user: null,
   mode: "delegate",
   roomId: "main",
+  participants: [...defaultParticipants],
   unsubscribeMessages: null,
-  unsubscribeDocuments: null
+  unsubscribeDocuments: null,
+  unsubscribeParticipants: null
 };
 
 const els = {
@@ -58,6 +60,12 @@ const els = {
   documentUrl: document.querySelector("#document-url"),
   documentNote: document.querySelector("#document-note"),
   documentStatus: document.querySelector("#document-status"),
+  personForm: document.querySelector("#person-form"),
+  personLabel: document.querySelector("#person-label"),
+  personEmail: document.querySelector("#person-email"),
+  personRole: document.querySelector("#person-role"),
+  personStatus: document.querySelector("#person-status"),
+  peopleList: document.querySelector("#people-list"),
   emptyTemplate: document.querySelector("#empty-template")
 };
 
@@ -98,6 +106,7 @@ renderEmpty(els.adminMessages);
 renderEmpty(els.screeningFeed);
 renderEmpty(els.delegateDocuments);
 renderEmpty(els.adminDocuments);
+renderEmpty(els.peopleList);
 populateRecipientPickers();
 
 document.querySelectorAll(".tab").forEach((tab) => {
@@ -179,6 +188,45 @@ els.documentForm.addEventListener("submit", async (event) => {
   }
 });
 
+els.personForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!canUseRoom()) return;
+  if (state.mode !== "admin") {
+    setPersonStatus("Only admin users can edit people.", "warn");
+    return;
+  }
+
+  const label = els.personLabel.value.trim();
+  const email = normalizeEmail(els.personEmail.value);
+  const role = els.personRole.value;
+  if (!label || !email) return;
+
+  const button = els.personForm.querySelector("button");
+  button.disabled = true;
+  setPersonStatus("Adding person...");
+
+  try {
+    await addDoc(collection(db, "rooms", state.roomId, "participants"), {
+      label,
+      email,
+      role,
+      createdBy: state.user.email || "",
+      createdAt: serverTimestamp()
+    });
+
+    els.personLabel.value = "";
+    els.personEmail.value = "";
+    els.personRole.value = "delegate";
+    setPersonStatus("Person added.");
+  } catch (error) {
+    const message = readableFirestoreError(error);
+    setPersonStatus(message, "warn");
+    setConnection(message, "warn");
+  } finally {
+    button.disabled = false;
+  }
+});
+
 function openWorkspace() {
   const roomText = "Room: main";
   els.delegateRoom.textContent = roomText;
@@ -219,6 +267,7 @@ function subscribeToRoom() {
   renderEmpty(els.screeningFeed);
   renderEmpty(els.delegateDocuments);
   renderEmpty(els.adminDocuments);
+  renderEmpty(els.peopleList);
 
   const messageQuery = query(
     collection(db, "rooms", state.roomId, "messages"),
@@ -230,6 +279,11 @@ function subscribeToRoom() {
     orderBy("createdAt", "desc"),
     limit(80)
   );
+  const participantQuery = query(
+    collection(db, "rooms", state.roomId, "participants"),
+    orderBy("label", "asc"),
+    limit(200)
+  );
 
   state.unsubscribeMessages = onSnapshot(messageQuery, async (snapshot) => {
     const items = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
@@ -239,6 +293,13 @@ function subscribeToRoom() {
   state.unsubscribeDocuments = onSnapshot(documentQuery, async (snapshot) => {
     const items = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     renderDocuments(items);
+  }, (error) => setConnection(readableFirestoreError(error), "warn"));
+
+  state.unsubscribeParticipants = onSnapshot(participantQuery, (snapshot) => {
+    const remoteParticipants = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    state.participants = mergeParticipants(defaultParticipants, remoteParticipants);
+    populateRecipientPickers();
+    renderPeople(state.participants);
   }, (error) => setConnection(readableFirestoreError(error), "warn"));
 }
 
@@ -411,11 +472,26 @@ function populateRecipientPickers() {
 
 function renderRecipientOptions(select, options) {
   select.replaceChildren();
-  for (const participant of participants) {
+  const currentEmail = normalizeEmail(state.user?.email || "");
+  const filtered = state.participants.filter((participant) => {
+    if (!options.includeChair && participant.role === "chair") return false;
+    if (!options.includeDelegates && participant.role !== "chair") return false;
+    return normalizeEmail(participant.email) !== currentEmail;
+  });
+
+  if (!filtered.length) {
+    const option = document.createElement("option");
+    option.textContent = "No recipients available yet";
+    option.disabled = true;
+    select.append(option);
+    return;
+  }
+
+  for (const participant of filtered) {
     if (!options.includeChair && participant.role === "chair") continue;
     if (!options.includeDelegates && participant.role !== "chair") continue;
     const option = document.createElement("option");
-    option.value = participant.email;
+    option.value = normalizeEmail(participant.email);
     option.textContent = participant.label;
     option.dataset.label = participant.label;
     option.dataset.role = participant.role;
@@ -424,7 +500,7 @@ function renderRecipientOptions(select, options) {
 }
 
 function selectedRecipients(select) {
-  return Array.from(select.selectedOptions).map((option) => ({
+  return Array.from(select.selectedOptions).filter((option) => !option.disabled).map((option) => ({
     email: option.value,
     label: option.dataset.label || option.textContent
   }));
@@ -452,8 +528,10 @@ function messageStatusLabel(item) {
 function closeSubscriptions() {
   if (state.unsubscribeMessages) state.unsubscribeMessages();
   if (state.unsubscribeDocuments) state.unsubscribeDocuments();
+  if (state.unsubscribeParticipants) state.unsubscribeParticipants();
   state.unsubscribeMessages = null;
   state.unsubscribeDocuments = null;
+  state.unsubscribeParticipants = null;
 }
 
 function restoreLoginState() {
@@ -470,6 +548,45 @@ function displayName() {
   return state.user?.email?.split("@")[0] || "Participant";
 }
 
+function mergeParticipants(fallback, remote) {
+  const merged = new Map();
+  for (const participant of [...fallback, ...remote]) {
+    const email = normalizeEmail(participant.email || "");
+    if (!email) continue;
+    merged.set(email, {
+      email,
+      label: participant.label || email,
+      role: participant.role === "chair" ? "chair" : "delegate"
+    });
+  }
+  return Array.from(merged.values()).sort((a, b) => a.label.localeCompare(b.label));
+}
+
+function renderPeople(items) {
+  els.peopleList.replaceChildren();
+  if (!items.length) {
+    renderEmpty(els.peopleList);
+    return;
+  }
+
+  for (const item of items) {
+    const row = document.createElement("article");
+    row.className = "person-row";
+    row.innerHTML = `
+      <div>
+        <strong>${escapeHtml(item.label)}</strong>
+        <p>${escapeHtml(item.email)}</p>
+      </div>
+      <span>${escapeHtml(item.role)}</span>
+    `;
+    els.peopleList.append(row);
+  }
+}
+
+function normalizeEmail(email) {
+  return String(email).trim().toLowerCase();
+}
+
 function setConnection(text, tone = "") {
   els.connection.textContent = text;
   els.connection.className = `connection ${tone}`.trim();
@@ -478,6 +595,11 @@ function setConnection(text, tone = "") {
 function setDocumentStatus(text, tone = "") {
   els.documentStatus.textContent = text;
   els.documentStatus.className = `form-status ${tone}`.trim();
+}
+
+function setPersonStatus(text, tone = "") {
+  els.personStatus.textContent = text;
+  els.personStatus.className = `form-status ${tone}`.trim();
 }
 
 function setFormStatus(target, text, tone = "") {

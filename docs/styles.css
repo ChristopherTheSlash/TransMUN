@@ -197,6 +197,7 @@ h2 {
 
 label,
 .document-form,
+.person-form,
 .composer {
   display: grid;
   gap: 10px;
@@ -374,6 +375,40 @@ textarea:focus {
   margin-bottom: 12px;
 }
 
+.person-form {
+  grid-template-columns: 1fr 1fr minmax(120px, 160px) auto;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+.people-list {
+  display: grid;
+  gap: 10px;
+}
+
+.person-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.person-row p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.person-row span {
+  flex: 0 0 auto;
+  color: var(--accent-strong);
+  font-weight: 800;
+}
+
 .empty {
   display: grid;
   min-height: 160px;
@@ -410,6 +445,10 @@ textarea:focus {
   }
 
   .composer {
+    grid-template-columns: 1fr;
+  }
+
+  .person-form {
     grid-template-columns: 1fr;
   }
 }
