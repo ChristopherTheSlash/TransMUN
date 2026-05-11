@@ -1,0 +1,12 @@
+{
+  "name": "transmun-comms",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Firebase-backed GitHub Pages communications app for TransMUN.",
+  "scripts": {
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

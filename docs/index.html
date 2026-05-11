@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TransMUN Comms</title>
+    <link rel="stylesheet" href="./styles.css">
+    <script type="module" src="./app.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">TransMUN</p>
+        <h1>Secure room communications</h1>
+      </div>
+      <div class="connection" id="connection">Offline</div>
+    </header>
+
+    <main class="layout">
+      <section class="setup" aria-labelledby="setup-title">
+        <h2 id="setup-title">Join a room</h2>
+        <form id="join-form" class="form">
+          <label>
+            Display name
+            <input id="display-name" name="displayName" autocomplete="name" required maxlength="40">
+          </label>
+          <label>
+            Delegation or role
+            <input id="role" name="role" autocomplete="organization" required maxlength="50">
+          </label>
+          <label>
+            Room code
+            <input id="room-code" name="roomCode" autocomplete="off" required maxlength="60" placeholder="committee-a">
+          </label>
+          <label>
+            Room passphrase
+            <input id="passphrase" name="passphrase" type="password" autocomplete="current-password" required minlength="8">
+          </label>
+          <label class="checkline">
+            <input id="admin-mode" name="adminMode" type="checkbox">
+            Chair/document dispatch mode
+          </label>
+          <button type="submit">Enter room</button>
+        </form>
+        <p class="hint">
+          Messages are encrypted in this browser before they are saved. Everyone in the same room needs the same room code and passphrase.
+        </p>
+      </section>
+
+      <section class="workspace" aria-label="Communication workspace">
+        <nav class="tabs" aria-label="Views">
+          <button class="tab active" type="button" data-view="messages">Messages</button>
+          <button class="tab" type="button" data-view="documents">Documents</button>
+        </nav>
+
+        <section class="view active" id="messages-view" aria-labelledby="messages-title">
+          <div class="section-head">
+            <div>
+              <h2 id="messages-title">Room messages</h2>
+              <p id="room-label">No room joined</p>
+            </div>
+            <button id="leave-room" type="button" class="secondary">Leave</button>
+          </div>
+
+          <div id="messages" class="feed" aria-live="polite"></div>
+
+          <form id="message-form" class="composer">
+            <input id="message-to" maxlength="60" placeholder="To: all, chair, or delegation">
+            <textarea id="message-body" rows="3" maxlength="1600" placeholder="Write a message..." required></textarea>
+            <button type="submit">Send</button>
+          </form>
+        </section>
+
+        <section class="view" id="documents-view" aria-labelledby="documents-title">
+          <div class="section-head">
+            <div>
+              <h2 id="documents-title">Document dispatch</h2>
+              <p>Encrypted room documents and chair notices.</p>
+            </div>
+          </div>
+
+          <form id="document-form" class="document-form hidden">
+            <input id="document-title" maxlength="90" placeholder="Document title" required>
+            <textarea id="document-body" rows="6" maxlength="6000" placeholder="Paste document text or instructions..." required></textarea>
+            <button type="submit">Dispatch document</button>
+          </form>
+
+          <div id="documents" class="documents" aria-live="polite"></div>
+        </section>
+      </section>
+    </main>
+
+    <template id="empty-template">
+      <div class="empty">Nothing here yet.</div>
+    </template>
+  </body>
+</html>
