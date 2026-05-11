@@ -10,9 +10,14 @@ export const firebaseConfig = {
 
 export const accounts = [
   { account: "Chair", authEmail: "chair@transmun.invalid", label: "Chair", role: "chair" },
-  { account: "USA", authEmail: "usa@transmun.invalid", label: "USA", role: "delegate" },
-  { account: "Britain", authEmail: "britain@transmun.invalid", label: "Britain", role: "delegate" },
-  { account: "France", authEmail: "france@transmun.invalid", label: "France", role: "delegate" },
-  { account: "Egypt", authEmail: "egypt@transmun.invalid", label: "Egypt", role: "delegate" },
-  { account: "Israel", authEmail: "israel@transmun.invalid", label: "Israel", role: "delegate" }
+  { account: "Example 1", authEmail: "example1@transmun.invalid", label: "USA (Example 1)", role: "delegate" },
+  { account: "Example 2", authEmail: "example2@transmun.invalid", label: "Britain (Example 2)", role: "delegate" },
+  { account: "Example 3", authEmail: "example3@transmun.invalid", label: "France (Example 3)", role: "delegate" },
+  { account: "Example 4", authEmail: "example4@transmun.invalid", label: "Egypt (Example 4)", role: "delegate" },
+  { account: "Example 5", authEmail: "example5@transmun.invalid", label: "Israel (Example 5)", role: "delegate" },
+  { account: "Example 6", authEmail: "example6@transmun.invalid", label: "USA (Example 6)", role: "delegate" },
+  { account: "Example 7", authEmail: "example7@transmun.invalid", label: "Britain (Example 7)", role: "delegate" },
+  { account: "Example 8", authEmail: "example8@transmun.invalid", label: "France (Example 8)", role: "delegate" },
+  { account: "Example 9", authEmail: "example9@transmun.invalid", label: "Egypt (Example 9)", role: "delegate" },
+  { account: "Example 10", authEmail: "example10@transmun.invalid", label: "Israel (Example 10)", role: "delegate" }
 ];

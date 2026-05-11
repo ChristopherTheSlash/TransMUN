@@ -551,7 +551,7 @@ function renderPeople(items) {
 }
 
 function normalizeAccount(value) {
-  return String(value).trim();
+  return String(value).trim().toLowerCase();
 }
 
 function setConnection(text, tone = "") {
