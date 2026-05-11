@@ -5,11 +5,10 @@ A GitHub Pages-friendly Firebase web app for simulation room messaging and docum
 ## What this uses
 
 - GitHub Pages serves the static files in `docs/`.
-- Firebase Authentication signs users in anonymously.
-- Cloud Firestore stores encrypted message/document records.
-- Browser Web Crypto encrypts/decrypts room content with the room passphrase before Firestore sees it.
+- Firebase Authentication signs users in with email/password.
+- Cloud Firestore stores room messages and document links.
 
-This is designed for simulation privacy, not high-stakes secrecy. Room names and sender labels are visible in Firestore metadata, but message/document bodies are encrypted.
+This is designed for a controlled simulation, not high-stakes secrecy. Only Firebase-authenticated users should be able to read/write data when the Firestore rules are published.
 
 ## Firebase setup
 
@@ -55,16 +54,13 @@ https://your-username.github.io/your-repo-name/
 
 ## How to run the simulation
 
-- Give each room a room code, such as `committee-a`.
-- Give that room one passphrase. Use at least 8 characters; longer is better.
 - Create one Firebase email/password user for each participant.
-- Everyone in the same room can read the same encrypted room messages.
-- Use different room codes/passphrases for private channels.
+- Everyone signs into the same main event room.
+- Everyone can read the same room messages and document links.
 - Put chair/admin emails in `adminEmails` so those users open the admin panel.
 
 ## Limits to understand
 
-- This app does not stop someone from sharing a room code/passphrase.
-- Firebase rules require sign-in and basic data validation, but they do not know the room passphrase.
-- Anonymous Firebase users are still public internet users. Keep the rules published from `firestore.rules`.
+- This app does not stop someone from sharing their account password.
+- Firebase rules require sign-in and basic data validation. Keep the rules published from `firestore.rules`.
 - Do not use this for passwords, payment data, legal evidence, or anything genuinely sensitive.

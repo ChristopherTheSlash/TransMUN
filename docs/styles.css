@@ -140,12 +140,16 @@ h2 {
   background: #fff4e4;
 }
 
-.page {
-  display: none;
+.page:not(.active) {
+  display: none !important;
 }
 
 .page.active {
   display: block;
+}
+
+.page.active.shell {
+  display: grid;
 }
 
 .login-page {

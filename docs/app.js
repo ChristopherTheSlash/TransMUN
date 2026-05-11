@@ -21,8 +21,7 @@ const state = {
   authReady: false,
   user: null,
   mode: "delegate",
-  roomId: "",
-  passphrase: "",
+  roomId: "main",
   unsubscribeMessages: null,
   unsubscribeDocuments: null
 };
@@ -37,8 +36,6 @@ const els = {
   loginForm: document.querySelector("#login-form"),
   loginEmail: document.querySelector("#login-email"),
   loginPassword: document.querySelector("#login-password"),
-  roomCode: document.querySelector("#room-code"),
-  passphrase: document.querySelector("#passphrase"),
   delegateRoom: document.querySelector("#delegate-room"),
   adminRoom: document.querySelector("#admin-room"),
   delegateMessages: document.querySelector("#delegate-messages-feed"),
@@ -107,8 +104,6 @@ els.loginForm.addEventListener("submit", async (event) => {
     return;
   }
 
-  state.roomId = normalizeRoom(els.roomCode.value);
-  state.passphrase = els.passphrase.value;
   localStorage.setItem("transmun.room", JSON.stringify({
     roomId: state.roomId,
     email: els.loginEmail.value.trim()
@@ -124,9 +119,7 @@ els.loginForm.addEventListener("submit", async (event) => {
 
 els.signOut.addEventListener("click", async () => {
   closeSubscriptions();
-  state.roomId = "";
-  state.passphrase = "";
-  els.passphrase.value = "";
+  state.roomId = "main";
   await signOut(auth);
 });
 
@@ -149,12 +142,11 @@ els.documentForm.addEventListener("submit", async (event) => {
   const note = els.documentNote.value.trim();
   if (!title || !url) return;
 
-  const encrypted = await encryptText(note || "No note provided.", state.passphrase);
   await addDoc(collection(db, "rooms", state.roomId, "documents"), {
-    ...encrypted,
     type: "document",
     title,
     url,
+    note: note || "No note provided.",
     senderName: displayName(),
     senderRole: "Chair",
     senderId: state.user.uid,
@@ -167,13 +159,7 @@ els.documentForm.addEventListener("submit", async (event) => {
 });
 
 function openWorkspace() {
-  if (!state.roomId || !state.passphrase) {
-    setConnection("Enter room passphrase again", "warn");
-    showPage("login");
-    return;
-  }
-
-  const roomText = `Room: ${state.roomId}`;
+  const roomText = "Room: main";
   els.delegateRoom.textContent = roomText;
   els.adminRoom.textContent = roomText;
   showPage(state.mode);
@@ -224,13 +210,13 @@ function subscribeToRoom() {
   );
 
   state.unsubscribeMessages = onSnapshot(messageQuery, async (snapshot) => {
-    const items = await Promise.all(snapshot.docs.map((doc) => decryptRecord(doc.data(), doc.id)));
-    renderMessages(items.filter(Boolean));
+    const items = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    renderMessages(items);
   }, (error) => setConnection(error.message, "warn"));
 
   state.unsubscribeDocuments = onSnapshot(documentQuery, async (snapshot) => {
-    const items = await Promise.all(snapshot.docs.map((doc) => decryptRecord(doc.data(), doc.id)));
-    renderDocuments(items.filter(Boolean));
+    const items = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    renderDocuments(items);
   }, (error) => setConnection(error.message, "warn"));
 }
 
@@ -241,11 +227,10 @@ async function sendMessage(toInput, bodyInput) {
   const to = toInput.value.trim() || "all";
   if (!plainText) return;
 
-  const encrypted = await encryptText(plainText, state.passphrase);
   await addDoc(collection(db, "rooms", state.roomId, "messages"), {
-    ...encrypted,
     type: "message",
     to,
+    body: plainText,
     senderName: displayName(),
     senderRole: state.mode === "admin" ? "Chair" : "Delegate",
     senderId: state.user.uid,
@@ -253,23 +238,6 @@ async function sendMessage(toInput, bodyInput) {
   });
 
   bodyInput.value = "";
-}
-
-async function decryptRecord(record, id) {
-  try {
-    const plainText = await decryptText(record, state.passphrase);
-    return {
-      id,
-      ...record,
-      plainText
-    };
-  } catch {
-    return {
-      id,
-      ...record,
-      plainText: "[Could not decrypt with this room passphrase]"
-    };
-  }
 }
 
 function renderMessages(items) {
@@ -293,7 +261,7 @@ function renderMessageFeed(target, items) {
         <span>${escapeHtml(item.senderRole || "")}</span>
         <span>to ${escapeHtml(item.to || "all")}</span>
       </div>
-      <p>${escapeHtml(item.plainText)}</p>
+      <p>${escapeHtml(item.body || "")}</p>
     `;
     target.append(article);
   }
@@ -322,7 +290,7 @@ function renderDocumentList(target, items) {
         <span>${escapeHtml(item.senderName || "Chair")}</span>
       </div>
       <a href="${escapeAttribute(item.url || "#")}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.url || "No link")}</a>
-      <p>${escapeHtml(item.plainText)}</p>
+      <p>${escapeHtml(item.note || "")}</p>
     `;
     target.append(article);
   }
@@ -333,8 +301,8 @@ function renderEmpty(target) {
 }
 
 function canUseRoom() {
-  if (!state.user || !state.roomId || !state.passphrase) {
-    setConnection("Log in and join a room first", "warn");
+  if (!state.user || !state.roomId) {
+    setConnection("Log in first", "warn");
     return false;
   }
   return true;
@@ -351,11 +319,6 @@ function restoreLoginState() {
   const saved = JSON.parse(localStorage.getItem("transmun.room") || "null");
   if (!saved) return;
   els.loginEmail.value = saved.email || "";
-  els.roomCode.value = saved.roomId || "main";
-}
-
-function normalizeRoom(value) {
-  return value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "") || "main";
 }
 
 function isAdmin(email) {
@@ -380,68 +343,6 @@ function readableAuthError(error) {
     return "Enable Email/Password in Firebase Auth";
   }
   return error?.message || "Could not sign in";
-}
-
-async function encryptText(plainText, passphrase) {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const key = await deriveKey(passphrase, salt);
-  const cipherBuffer = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
-    key,
-    new TextEncoder().encode(plainText)
-  );
-
-  return {
-    cipherText: toBase64(new Uint8Array(cipherBuffer)),
-    iv: toBase64(iv),
-    salt: toBase64(salt),
-    encryption: "AES-GCM/PBKDF2"
-  };
-}
-
-async function decryptText(record, passphrase) {
-  const salt = fromBase64(record.salt);
-  const iv = fromBase64(record.iv);
-  const cipherText = fromBase64(record.cipherText);
-  const key = await deriveKey(passphrase, salt);
-  const plainBuffer = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv },
-    key,
-    cipherText
-  );
-  return new TextDecoder().decode(plainBuffer);
-}
-
-async function deriveKey(passphrase, salt) {
-  const baseKey = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(passphrase),
-    "PBKDF2",
-    false,
-    ["deriveKey"]
-  );
-
-  return crypto.subtle.deriveKey(
-    {
-      name: "PBKDF2",
-      salt,
-      iterations: 120000,
-      hash: "SHA-256"
-    },
-    baseKey,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["encrypt", "decrypt"]
-  );
-}
-
-function toBase64(bytes) {
-  return btoa(String.fromCharCode(...bytes));
-}
-
-function fromBase64(value) {
-  return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
 }
 
 function escapeHtml(value) {
