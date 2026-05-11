@@ -9,5 +9,5 @@ export const firebaseConfig = {
 };
 
 export const adminEmails = [
-  "christopher10182004@gmail.com"
+  "christopherw.mun@gmail.com"
 ];
